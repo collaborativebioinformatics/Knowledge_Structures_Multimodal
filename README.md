@@ -40,7 +40,7 @@ We decided to go with the data for the [CHIMERA Challenge](https://registry.open
 > Combining HIstology, Medical imaging (radiology) and molEcular data for medical pRognosis and diAgnosis
 Details for the challenge are [here](https://chimera.grand-challenge.org/).
 
-The CHIMERA dataset contains histopathology and RNA sequencing along with patients' clinical data. 
+CHIMERA includes three tasks - Task 1: Prostate Cancer Biochemical Recurrence Prediction, Task 2: Bcg Response Subtype Prediction In High-Risk NMIBC, and Task 3: Bladder Cancer Recurrence Prediction. The CHIMERA Task 3 dataset contains histopathology and RNA sequencing along with clinical data per patient. 
 
 
 *author's note, what a forced acronym :-)*
