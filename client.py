@@ -102,7 +102,7 @@ def main():
             running_loss = 0.0
             for i, batch in enumerate(train_loader):
                 data = batch.to(device)
-                print(data)
+                # print(data) # DEBUG STATEMENT
                 optimizer.zero_grad()
 
                 predictions = predict_risk(model, data)
@@ -114,28 +114,28 @@ def main():
                 optimizer.step()
 
                 running_loss += cost.item()
-                if i % 2000 == 1999:
-                    avg_loss = running_loss / 2000
-                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {avg_loss:.3f}")
+                
+                avg_loss = running_loss / (i + 1)
+                print(f"[{epoch + 1}, {i + 1:5d}] loss: {avg_loss:.3f}")
 
-                    # Optional: Log metrics
-                    global_step = (
-                        input_model.current_round * steps
-                        + epoch * len(train_loader)
-                        + i
-                    )
-                    summary_writer.add_scalar(
-                        tag="loss", scalar=avg_loss, global_step=global_step
-                    )
+                # Optional: Log metrics
+                global_step = (
+                    input_model.current_round * steps
+                    + epoch * len(train_loader)
+                    + i
+                )
+                summary_writer.add_scalar(
+                    tag="loss", scalar=avg_loss, global_step=global_step
+                )
 
-                    print(
-                        f"site={client_name}, Epoch: {epoch}/{EPOCHS}, Iteration: {i}, Loss: {running_loss}"
-                    )
-                    running_loss = 0.0
+                print(
+                    f"site={client_name}, Epoch: {epoch}/{EPOCHS}, Iteration: {i}, Loss: {running_loss}"
+                )
+                running_loss = 0.0
 
         print(f"Finished Training for {client_name}")
 
-        PATH = "./cifar_net.pth"
+        PATH = f"./{client_name}.pth"
         torch.save(model.state_dict(), PATH)
 
         # (7) construct trained FL model
