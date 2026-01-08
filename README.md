@@ -7,6 +7,8 @@
 - [X] Stick w the default MIT License, just don't use GPL or LGPL because industry can't use it 
 - [X] (Tyler) Implement the baseline for Task 3 of Chimera in a federated setting (NVFlare)
 - [ ] Use Chimera Task 3 leaderboard and other research to think about improvements or a potential way to use a federated model to do well on this task
+  - [ ] Attention scores for the concatenated embeddings or more interpretable weights-per-modality (though this might have the issue where higher-dim embeddings affect the weights more/less bc they're bigger... not sure).
+  - [ ] Maybe a combo of both where we do interpretable trainable weights per modality, then an attention layer within each modality.
 - [ ] Now that we're in a federated setting, we can do updates for each modality independently, and thus we can extend each modality's data beyond the data merely provided in CHIMERA
   - [ ] e.g., find more histopathology data
   - [ ] e.g., find other potential modalities that might bolster our global fusion model (or we update our different fusion model architecture to take in this extra modality).
