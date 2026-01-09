@@ -2,7 +2,7 @@
 We modify Task 2 of CHIMERA, using Task 3 dataset. For the proof-of-concept, we will only use RNASeq and Clinical Data (CD). If that works, we can use images (or leave that for future directions).
 
 ## Examining the Data
-We first examine the clinical data:
+We first examine the clinical data for a single id `3A_001`:
 ```json
 {
   "age": 72,
@@ -54,8 +54,22 @@ And now we examine a (truncated) RNASeq data:
 ```
 Each datapoint has an ID. The task 3 data has 177 IDs, which can be accessed using the notebook `helpers/get_ids.py`.
 
+Looking at `raw/metadata.csv`, The distribution of the data is `n=126` people in Cohort A, and `n=50` people in Cohort B. 
+
 ## Example Use Case
-Consider we have 2 hospitals $X$ and $Y$, each with different screening capabilities. Each is able to provide clinical data and image histology data, but hospital $Y$ can additionally provide RNA sequencing data. We'd like to train a model to detect the likelihood of disease progression, so we will train a binary classifier based on the clinical data's ground truth `progression` key. 
+Consider we have 2 hospitals, one in San Diego and one in Memphis. 
+
+For the sake of this example, we make some assumptions. Since San Diego is a larger city, and thus its hospital will (1) see more people and (2) have more screening equipment than the hospital in Memphis.
+
+To simulate such an environment, we will assign `n=100` people in Cohort A to the San Diego hospital, and all `n=50` people in Cohort B to the Memphis hospital. 
+
+The remaining `n=26` people from CHIMERA Task 3, Cohort A will be held out as an evaluation set.
+
+For the San Diego hospital, we are given access to both RNA sequencing and clinical data (CD), whereas for the Memphis hospital, we are only given access to clinical data.
+
+We would like to train a federated model to predict the cases where the disease will progress, akin to Task 2 of the CHIMERA challenge. Formally, we are training a binary classifier, using the `progression` key of the clinical data as the label.
+
+For now, we have elected to avoid processing images. But this is an easily extendable part of the pipeline as we will soon see.
 
 We adapt the diagram from [CHIMERA Task 3](https://chimera.grand-challenge.org/task-3-bladder-cancer-recurrence-prediction/) to summarize the task:
 
@@ -63,14 +77,6 @@ We adapt the diagram from [CHIMERA Task 3](https://chimera.grand-challenge.org/t
 
 ### Federation + Data Splits
 We will simulate federation by splitting the data, assuming that patients are either from hospital $X$ or hospital $Y$.
-
-We will split the `n=177` datapoints into 4 buckets:
-1. IDs for hospital $X$
-2. IDs for hospital $Y$
-3. validation data between federated learning rounds (global validation)
-4. test data for the final evaluation
-Future work could use the subsets for hospital $X$ and hospital $Y$ could also do a validation holdout, but this is unnecessary complexity out of scope for the hackathon.
-
 
 ## Fusion Model Architecture
 We will explain each part of the diagram below:
