@@ -20,11 +20,9 @@
 ```bash
 # create a Python virtual environment (I used .venv, use conda or wtv you want)
 source .venv/bin/activate # or however you activate your Python virtual environments.
-pip install nvflare
 # Install PyTorch optional dependencies
-pip install "nvflare[PT]" # should also install torch and other necessary packages
-pip install tensorboard matplotlib
-pip install jupyter ipykernel
+# should also install torch and other necessary packages
+pip install "nvflare[PT]" torchinfo tensorboard matplotlib jupyter ipykernel
 ```
 Run the jupyter notebook `prf-of-concept.ipynb`. This was built by extending the "Hello PyTorch" example from NVFlare (`hello-pt`) and modifying the clients such that each client only provided one modality of data (in the simple test, RNA for one client, Clinical Data for the other) and updates were done independently on both clients and aggregated on the server.
 
