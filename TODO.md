@@ -57,6 +57,10 @@ Each datapoint has an ID. The task 3 data has 177 IDs, which can be accessed usi
 Looking at `raw/metadata.csv`, The distribution of the data is `n=126` people in Cohort A, and `n=50` people in Cohort B. 
 
 ## Example Use Case
+> At a high level: we simulate an example where federated + multimodal learning 
+> mitigates data gaps stemming from unequal access to healthcare, bypassing
+> the data harmonization step when certain data modalities are missing.
+
 Consider we have 2 hospitals, one in San Diego and one in Memphis. 
 
 For the sake of this example, we make some assumptions. Since San Diego is a larger city, and thus its hospital will (1) see more people and (2) have more screening equipment than the hospital in Memphis.

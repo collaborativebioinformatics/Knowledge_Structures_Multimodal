@@ -38,8 +38,6 @@ class ClinicalDataset(BaseMedicalDataset):
             float(lvi_map.get(data['LVI'], 0)),
             1.0 if data['variant'] == "UCC" else 0.0,
             float(data['no_instillations']),
-            float(data['progression']),
-            float(data['Time_to_prog_or_FUend'])
         ]
         return torch.tensor(features, dtype=torch.float32)
 
