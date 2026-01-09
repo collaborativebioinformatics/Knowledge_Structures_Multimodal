@@ -1,21 +1,31 @@
-import torch
 import torch.nn as nn
-
-class Dummy(nn.Module):
-    def __init__(self, in_dim, out_dim) -> None:
+    
+class CDNet(nn.Module): # TabularSNN
+    def __init__(self, in_dim, dropout_p=0.3):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, 128),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(128, out_dim) 
-        )
-        self.out_dim = out_dim 
-        
-    def forward(self, x=None):
-        if x is not None:
-            out = self.net(x)
-            return out 
 
-        return torch.zeros((B, self.out_dim))
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, 64),
+            nn.LayerNorm(64),   
+            nn.SELU(),
+            nn.AlphaDropout(dropout_p),
+
+            nn.Linear(64, 128),
+            nn.LayerNorm(128),
+            nn.SELU(),
+            nn.AlphaDropout(dropout_p),
+
+            nn.Linear(128, 256),
+            nn.LayerNorm(256),
+            nn.SELU(),
+            nn.AlphaDropout(dropout_p),
+
+            nn.Linear(256, 512),
+            nn.LayerNorm(512),
+            nn.SELU(),
+            nn.AlphaDropout(dropout_p)
+        )
+
+    def forward(self, x):
+        return self.mlp(x)
         

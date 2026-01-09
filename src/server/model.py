@@ -7,56 +7,42 @@ tabular_snn.py
 import torch
 import torch.nn as nn
 
-# TODO: import the subnets from embed{CD, HE, RNA}
-# the network here should provide sub-dimensions for each subnet
-# as an init parameter. This is set at the global level.
+from embedRNA import RNANet
+from embedCD import CDNet
 
-class TabularSNN(nn.Module):
-    def __init__(self, clinical_in_dim, dropout_p=0.3):
-        super().__init__()
-
-        self.mlp = nn.Sequential(
-            nn.Linear(clinical_in_dim, 64),
-            nn.LayerNorm(64),   
-            nn.SELU(),
-            nn.AlphaDropout(dropout_p),
-
-            nn.Linear(64, 128),
-            nn.LayerNorm(128),
-            nn.SELU(),
-            nn.AlphaDropout(dropout_p),
-
-            nn.Linear(128, 256),
-            nn.LayerNorm(256),
-            nn.SELU(),
-            nn.AlphaDropout(dropout_p),
-
-            nn.Linear(256, 512),
-            nn.LayerNorm(512),
-            nn.SELU(),
-            nn.AlphaDropout(dropout_p)
-        )
-
-    def forward(self, x):
-        return self.mlp(x)
-
-class ABMIL_Fusion(nn.Module):
-    def __init__(self, in_dim, clinical_in_dim=14, n_classes, gate=True, dropout_p=0.5):
+class FusionNet(nn.Module):
+    def __init__(
+            self,
+            rna_in_dim=19359,
+            clinical_in_dim=14, 
+            embedding_dim=512,
+            gate=True, 
+            dropout_CD=0.3,
+            dropout_RNA=0.3
+        ):
         super().__init__()
         self.gate = gate
 
-        # === MIL embedding branch with configurable dropout ===
-        self.embedding = nn.Sequential(
-            nn.Linear(in_dim, 512),
-            nn.ReLU(),
-            nn.Dropout(dropout_p)  # configurable dropout
+        # === RNA embedding branch with configurable dropout ===
+        self.rna_out_dim = embedding_dim - clinical_in_dim
+        self.rna_embedding = RNANet(
+            in_dim=rna_in_dim, 
+            out_dim=self.rna_out_dim, 
+            dropout_p=dropout_RNA
         )
 
-        # Attention branch
-        self.attention = nn.Linear(512, 1)
-
         # === Clinical branch with LayerNorm (safe for batch size = 1) ===
-        self.tabular_net = TabularSNN(clinical_in_dim=clinical_in_dim, dropout_p=0.3)
+        # TODO: why batch size = 1?
+        self.tabular_net = CDNet(
+            in_dim=clinical_in_dim, 
+            dropout_p=0.3
+        )
+
+        # Interpretable per-modality importance weights
+        # TODO: use nn.Parameter to create importance weights
+        
+        # Attention backbone
+        self.attention = nn.Linear(512, 1)
 
         # === Safe dummy forward to get output dimension ===
         with torch.no_grad():
@@ -65,24 +51,34 @@ class ABMIL_Fusion(nn.Module):
             clinical_out_dim = self.tabular_net(dummy_input).shape[1]
             self.tabular_net.train()
 
-        # === Fusion classifier ===
-        self.classifier = nn.Linear(512 + clinical_out_dim, n_classes)
+        # === Fusion (binary) classifier ===
+        self.classifier = nn.Linear(512 + clinical_out_dim, 1)
 
-    def forward(self, x_bag, x_clinical):
-        # MIL embedding
-        h = self.embedding(x_bag)
-        a = torch.softmax(self.attention(h), dim=1)
-        z = torch.sum(a * h, dim=1)
+    def forward(self, x_clinical, x_rna=None):
+        
+        if x_rna is not None:
+            # RNA embedding
+            h = self.rna_embedding(x_rna)
+            a = torch.softmax(self.attention(h), dim=1)
+            z = torch.sum(a * h, dim=1)
+        else:
+            B = x_clinical.shape[0]
+            z = torch.zeros((B, self.rna_out_dim))
 
         # Clinical embedding
         z_tab = self.tabular_net(x_clinical)
 
-        # Optional gating
-        if self.gate:
-            z_tab = 0.5 * z_tab  # less aggressive scaling than 0.2
+        # TODO: apply per-modality importance weights
 
         # Fusion
         z_fusion = torch.cat((z, z_tab), dim=-1)
+
+        # TODO: apply attention backbone
+
+        # Optional gating
+        if self.gate:
+            z_tab = 0.5 * z_tab  # less aggressive scaling than 0.2
+        
         logits = self.classifier(z_fusion)
 
         return {'logits': logits, 'loss': None, 'attention': a}

@@ -106,14 +106,3 @@ We use an attention mechanism (simplest example: a linear layer) to let the fusi
 
 ### Level 5: Sigmoid for Binary Classification
 We then use an MLP to project the result of the attention backbone down to a single logit, which is then clamped to a 0 or 1 prediction.
-
-## Training + Evaluation
-The overall workflow is as follows:
-- Clients receive a copy of the fusion model
-- They run $k$ epochs of training using only the modalities they have 
-  - for example, Hospital $X$ will just have zero'd RNASeq embeddings,
-  - whereas Hospital $Y$ will have all modalities used.
-- these updated weights are sent to the NVFlare server
-  - and updated using FedAvg
-  - then the server runs a validation to see the performance of the model
-- after $n$ rounds of federated learning, we evaluate on the test set. Recall that since our fusion model is a binary classifier, this is just binary classification accuracy, plus confidence scores using the non-sigmoid logits.
