@@ -59,7 +59,7 @@ We opted for [Task 3](https://chimera.grand-challenge.org/task-3-bladder-cancer-
 
 For the purpose of federated learning, we split the dataset into two “clients”: Cohort A and Cohort B. These cohorts come from slightly different RNA-seq protocols, simulating heterogeneity across institutions. No batch effect adjustment was performed between the cohorts in original raw dataset.
 
-@yiman add the rna plot here.
+*@yiman add the rna plot here.*
 
 In addition, several clinical conditions also varied between the two datasets, further highlighting the need of a multimodal federated learning algorithm.
 
