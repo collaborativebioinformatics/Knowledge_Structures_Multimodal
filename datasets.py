@@ -3,6 +3,20 @@ import json
 import os
 from torch.utils.data import Dataset
 
+import boto3
+from botocore import UNSIGNED
+from botocore.client import Config
+import s3fs
+
+# Setup for data streaming
+BUCKET = "chimera-challenge"
+PREFIX = "v2/task3/data/"
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
+fs = s3fs.S3FileSystem(anon=True)
+
 class BaseMedicalDataset(Dataset):
     """Helper class to load JSON files."""
     def __init__(self, file_paths):
@@ -12,7 +26,7 @@ class BaseMedicalDataset(Dataset):
         return len(self.file_paths)
     
     def _load_json(self, idx):
-        with open(self.file_paths[idx], 'r') as f:
+        with fs.open(self.file_paths[idx], 'r') as f:
             return json.load(f)
 
 class ClinicalDataset(BaseMedicalDataset):
