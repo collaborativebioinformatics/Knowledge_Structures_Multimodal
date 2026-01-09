@@ -1,4 +1,4 @@
-# Multimodal Framework for Federated Learning (MuFFLe)
+# ![MuFFLe Logo](figures/muffle-logo.png) Multimodal Framework for Federated Learning (MuFFLe)
 
 ## TODO List + References:
 - [X] Reference previous years' repos as inspo for this GitHub repo
@@ -33,6 +33,10 @@ Run the jupyter notebook `prf-of-concept.ipynb`. This was built by extending the
 
 # Introduction (1 para)
 MuFFLe is a privacy-preserving framework for integrating multimodal biomedical data (RNA sequencing, clinical features) for cancer prognosis. Using NVIDIA's NVFlare, each hospital site trains on its local data and shares only model updates—not raw patient data—with a central server for aggregation.
+
+Cancer prognosis models require multimodal data (imaging, RNA-seq, clinical variables) across institutions, but data sharing is restricted due to privacy, regulatory, and institutional barriers. Integrating transcriptomics with clinical features improves prognostic performance, but most hospitals cannot pool raw patient data across sites. Centralized training is often infeasible due to HIPAA constraints, motivating a federated learning approach where data remains local.
+
+Using NVIDIA’s NVFlare, each hospital trains locally on its multimodal data and shares only encrypted model updates with a central server, enabling global model learning while preserving patient privacy.
 
 # Methods (2 paras)
 We use a late fusion architecture with modality-specific encoders: an RNA encoder projects gene expression data into 256-dim embeddings, while a clinical encoder maps patient features to 64-dim embeddings. These are concatenated and fed through a risk prediction head. Missing modalities are handled by substituting zero embeddings.
