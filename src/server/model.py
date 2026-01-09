@@ -1,3 +1,9 @@
+"""
+Adapted from CHIMERA Task 2 baseline 
+https://github.com/DIAGNijmegen/CHIMERA/tree/main/task2_baseline/prediction_model/Aggregators/training/mil_models
+model_abmil_fusion.py
+tabular_snn.py
+"""
 import torch
 import torch.nn as nn
 
@@ -5,90 +11,85 @@ import torch.nn as nn
 # the network here should provide sub-dimensions for each subnet
 # as an init parameter. This is set at the global level.
 
-class SimpleNetwork(nn.Module):
-    def __init__(self, rna_dim=19359, clinical_dim=13, risk_output_dim=1):
+class TabularSNN(nn.Module):
+    def __init__(self, clinical_in_dim, dropout_p=0.3):
         super().__init__()
 
-        assert rna_dim is not None, "rna_dim must be provided"
-        assert clinical_dim is not None, "clinical_dim must be provided"
+        self.mlp = nn.Sequential(
+            nn.Linear(clinical_in_dim, 64),
+            nn.LayerNorm(64),   
+            nn.SELU(),
+            nn.AlphaDropout(dropout_p),
 
-        # --- Dimensions for Fusion ---
-        self.rna_out_dim = 256
-        self.clinical_out_dim = 64
+            nn.Linear(64, 128),
+            nn.LayerNorm(128),
+            nn.SELU(),
+            nn.AlphaDropout(dropout_p),
 
-        # RNA projection network
-        self.rna_net = nn.Sequential(
-            nn.Linear(rna_dim, 2048),
-            nn.LayerNorm(2048),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(2048, 512),
+            nn.Linear(128, 256),
+            nn.LayerNorm(256),
+            nn.SELU(),
+            nn.AlphaDropout(dropout_p),
+
+            nn.Linear(256, 512),
             nn.LayerNorm(512),
+            nn.SELU(),
+            nn.AlphaDropout(dropout_p)
+        )
+
+    def forward(self, x):
+        return self.mlp(x)
+
+class ABMIL_Fusion(nn.Module):
+    def __init__(self, in_dim, clinical_in_dim=14, n_classes, gate=True, dropout_p=0.5):
+        super().__init__()
+        self.gate = gate
+
+        # === MIL embedding branch with configurable dropout ===
+        self.embedding = nn.Sequential(
+            nn.Linear(in_dim, 512),
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, self.rna_out_dim) 
-        ) # Output: 256
+            nn.Dropout(dropout_p)  # configurable dropout
+        )
 
-        # Clinical projection network
-        self.clinical_net = nn.Sequential(
-            nn.Linear(clinical_dim, 128),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(128, self.clinical_out_dim) 
-        ) # Output: 64
+        # Attention branch
+        self.attention = nn.Linear(512, 1)
 
-        # Final risk prediction head
-        self.risk_head = nn.Sequential(
-            nn.Dropout(0.5),
-            nn.Linear(self.rna_out_dim + self.clinical_out_dim, risk_output_dim)
-        ) # Input size: 512 (Path) + 256 (RNA) + 64 (Clinical) = 832
+        # === Clinical branch with LayerNorm (safe for batch size = 1) ===
+        self.tabular_net = TabularSNN(clinical_in_dim=clinical_in_dim, dropout_p=0.3)
 
-    def forward(self, x_rna=None, x_clinical=None, return_l1=False):
-        """
-        Args:
-            x_rna: [B, rna_dim] - RNA sequencing data
-            x_clinical: [B, clinical_dim] - Clinical features
-        """
-        
-        # 1. Determine Batch Size and Device from whichever input is available
-        # We assume at least one modality is present.
-        if x_rna is not None:
-            B, _ = x_rna.shape
-            device = x_rna.device
-        elif x_clinical is not None:
-            B, _ = x_clinical.shape
-            device = x_clinical.device
-        else:
-            raise ValueError("At least one input modality must be provided.")
+        # === Safe dummy forward to get output dimension ===
+        with torch.no_grad():
+            self.tabular_net.eval()  # prevent any norm layers from training stats
+            dummy_input = torch.zeros(1, clinical_in_dim)
+            clinical_out_dim = self.tabular_net(dummy_input).shape[1]
+            self.tabular_net.train()
 
-        # === RNA Branch ===
-        if x_rna is not None:
-            # x_rna: [B, rna_dim]
-            z_rna = self.rna_net(x_rna)                       # [B, 256]
-        else:
-            # Bypass: Create zero embedding directly
-            z_rna = torch.zeros((B, self.rna_out_dim), device=device)
+        # === Fusion classifier ===
+        self.classifier = nn.Linear(512 + clinical_out_dim, n_classes)
 
-        # === Clinical Branch ===
-        if x_clinical is not None:
-            # x_clinical: [B, clinical_dim]
-            z_clinical = self.clinical_net(x_clinical)        # [B, 64]
-        else:
-            # Bypass: Create zero embedding directly
-            z_clinical = torch.zeros((B, self.clinical_out_dim), device=device)
+    def forward(self, x_bag, x_clinical):
+        # MIL embedding
+        h = self.embedding(x_bag)
+        a = torch.softmax(self.attention(h), dim=1)
+        z = torch.sum(a * h, dim=1)
 
-        # === Feature Fusion ===
-        # Concatenate: [B, 512] + [B, 256] + [B, 64] -> [B, 832]
-        z = torch.cat([z_rna, z_clinical], dim=-1)
+        # Clinical embedding
+        z_tab = self.tabular_net(x_clinical)
 
-        # === Risk Prediction ===
-        risk = self.risk_head(z).squeeze(1)                   # [B]
+        # Optional gating
+        if self.gate:
+            z_tab = 0.5 * z_tab  # less aggressive scaling than 0.2
 
-        return risk
-        # # === Optional L1 penalty ===
-        # # Note: If RNA is missing, we usually skip the L1 penalty for it to save compute
-        # if return_l1:
-        #     l1_penalty = sum(torch.norm(p, p=1) for p in self.rna_net.parameters())
-        #     return {'risk': risk}, l1_penalty
-        # else:
-        #     return {'risk': risk}, None
+        # Fusion
+        z_fusion = torch.cat((z, z_tab), dim=-1)
+        logits = self.classifier(z_fusion)
+
+        return {'logits': logits, 'loss': None, 'attention': a}
+
+    def attention_entropy_loss(self, attention_weights):
+        """Optional regularization to avoid overconfident attention."""
+        entropy = -torch.mean(
+            torch.sum(attention_weights * torch.log(attention_weights + 1e-6), dim=1)
+        )
+        return entropy
