@@ -64,7 +64,7 @@ def update_model(
             optimizer.zero_grad()
 
             output = model(clinical_data, None)
-            cost = loss(output['logits'], labels)
+            cost = loss(output['logits'].squeeze(1), labels)
             cost.backward()
             optimizer.step()
 

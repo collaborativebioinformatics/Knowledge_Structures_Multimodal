@@ -82,7 +82,7 @@ def update_model(
             optimizer.zero_grad()
 
             output = model(clinical_data, rnaseq_data)
-            cost = loss(output['logits'], progression_labels)
+            cost = loss(output['logits'].squeeze(1), progression_labels)
             cost.backward()
             optimizer.step()
 
