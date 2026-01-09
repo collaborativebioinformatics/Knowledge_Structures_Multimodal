@@ -7,8 +7,8 @@ tabular_snn.py
 import torch
 import torch.nn as nn
 
-from embedRNA import RNANet
-from embedCD import CDNet
+from server.embedRNA import RNANet
+from server.embedCD import CDNet
 
 class FusionNet(nn.Module):
     def __init__(

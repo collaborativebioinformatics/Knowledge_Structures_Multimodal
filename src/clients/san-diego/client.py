@@ -8,15 +8,16 @@ import os
 import torch 
 from torch import nn 
 
-import nvflare.client as flare
-from nvflare.client.tracking import SummaryWriter
-
-from server.model import FusionNet
 from clients.datasets import ClinicalDataset, RNADataset, clinical_collate_fn
-from clients.evaluate import evaluate, load_eval_data
 
-def main():
-    DATASET_PATH="/Users/tyleryang/Developer/CMU-NVIDIA-Hackathon/rna-cd-data/"
+def update_model(
+    client_name: str, 
+    dataset_path: str,
+    model, 
+    device,
+    summary_writer,
+    current_round : int,
+):
     # ----------------------------------------------------------------------- #
     # Client-Specific Constants
     # ----------------------------------------------------------------------- #
@@ -27,16 +28,12 @@ def main():
     # Initialize Model
     # ----------------------------------------------------------------------- #
 
-    # Shared across all clients
-    model = FusionNet()
-
     # Free for Client to modify
     config = {
         "batch_size": 32,
         "epochs": 2,
         "learning_rate": 1e-2
     }
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     loss = nn.BCEWithLogitsLoss() # NOTE: model outputs probability, not binary classification
     optimizer = torch.optim.SGD(model.parameters(), lr=config['learning_rate'], momentum=0.9)
 
@@ -44,12 +41,12 @@ def main():
     # Load Client-Specific Data for Federated Training
     # ----------------------------------------------------------------------- #
     clinical_files = [
-        os.path.join(DATASET_PATH, f"{id}/{id}_CD.json") for id in IDS
+        os.path.join(dataset_path, f"{id}/{id}_CD.json") for id in IDS
     ]  # Add all clinical file paths here
     clinical_ds = ClinicalDataset(clinical_files)
 
     rna_files = [
-        os.path.join(DATASET_PATH, f"{id}/{id}_RNA.json") for id in IDS
+        os.path.join(dataset_path, f"{id}/{id}_RNA.json") for id in IDS
     ]  # Add all RNA file paths here
     rna_ds = RNADataset(rna_files)
 
@@ -69,69 +66,35 @@ def main():
     n_batches = len(CDloader)
     assert n_batches == len(RNAloader), f"Batches for CD ({n_batches}) not same as for RNA ({len(RNAloader)})"
 
-    # ----------------------------------------------------------------------- #
-    # Load Evaluation Data (only b/c we are simulating FL)
-    # ----------------------------------------------------------------------- #
-    testCDloader, testRNAloader = load_eval_data(DATASET_PATH)
 
-    # ----------------------------------------------------------------------- #
-    # NVFlare Initialization
-    # ----------------------------------------------------------------------- #
-    flare.init()
-    sys_info = flare.system_info()
-    client_name = sys_info["site_name"]
-    summary_writer = SummaryWriter()
-    print(f"San Diego Hospital corresponds to site_name: {client_name}")
+    print(f"San Diego Hospital corresponds to {client_name}")
 
     # ----------------------------------------------------------------------- #
     # NVFlare Training Loop
     # ----------------------------------------------------------------------- #
-    while flare.is_running():
-        global_model = flare.receive()
-        print(f"San Diego Hospital site_name: {client_name}")
-        print(f"current_round={global_model.current_round}") # type: ignore
+    steps = config['epochs'] * n_batches
+    for epoch in range(config['epochs']):
+        for i, ((clinical_data, progression_labels), rnaseq_data) in enumerate(zip(CDloader, RNAloader)):
+            clinical_data = clinical_data.to(device)
+            progression_labels = progression_labels.to(device)
+            rnaseq_data = rnaseq_data.to(device)
 
-        model.load_state_dict(global_model.params) # type: ignore
-        model.to(device)
+            optimizer.zero_grad()
 
-        # evaluate on received model
-        accuracy = evaluate(model, testCDloader, testRNAloader, device)
+            predictions = model(clinical_data, rnaseq_data)
+            cost = loss(predictions, progression_labels)
+            cost.backward()
+            optimizer.step()
 
-        steps = config['epochs'] * n_batches
-        for epoch in range(config['epochs']):
-            for i, ((clinical_data, progression_labels), rnaseq_data) in enumerate(zip(CDloader, RNAloader)):
-                clinical_data = clinical_data.to(device)
-                progression_labels = progression_labels.to(device)
-                rnaseq_data = rnaseq_data.to(device)
+            print(f"[{epoch + 1}, {i + 1:5d}] loss: {cost.item()}")
+            # Optional: Log metrics
+            global_step = current_round * steps + epoch * len(CDloader) + i # type: ignore
+            summary_writer.add_scalar(tag="loss", scalar=cost.item(), global_step=global_step)
 
-                optimizer.zero_grad()
+            print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {cost.item()}")
 
-                predictions = model(clinical_data, rnaseq_data)
-                cost = loss(predictions, progression_labels)
-                cost.backward()
-                optimizer.step()
+    print(f"Finished Training for San Diego Hospital, site_name: {client_name}")
 
-                print(f"[{epoch + 1}, {i + 1:5d}] loss: {cost.item()}")
-                # Optional: Log metrics
-                global_step = global_model.current_round * steps + epoch * len(CDloader) + i # type: ignore
-                summary_writer.add_scalar(tag="loss", scalar=cost.item(), global_step=global_step)
-
-                print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {cost.item()}")
-
-        print(f"Finished Training for San Diego Hospital, site_name: {client_name}")
-
-        PATH = "./san-diego.pth"
-        torch.save(model.state_dict(), PATH)
-
-        # (7) construct trained FL model
-        output_model = flare.FLModel(
-            params=model.cpu().state_dict(),
-            metrics={"accuracy": accuracy},
-            meta={"NUM_STEPS_CURRENT_ROUND": steps},
-        )
-        print(f"site: {client_name}, sending model to server.")
-        # (8) send model back to NVFlare
-        flare.send(output_model)
-
-if __name__ == "__main__":
-    main()
+    PATH = "./san-diego.pth"
+    torch.save(model.state_dict(), PATH)
+    return model.cpu().state_dict(), steps

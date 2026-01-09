@@ -8,15 +8,16 @@ import os
 import torch 
 from torch import nn 
 
-import nvflare.client as flare
-from nvflare.client.tracking import SummaryWriter
-
-from server.model import FusionNet
 from clients.datasets import ClinicalDataset
-from clients.evaluate import evaluate, load_eval_data
 
-def main():
-    DATASET_PATH="/Users/tyleryang/Developer/CMU-NVIDIA-Hackathon/rna-cd-data/"
+def update_model(
+    client_name: str, 
+    dataset_path: str,
+    model, 
+    device,
+    summary_writer,
+    current_round : int,
+):
     # ----------------------------------------------------------------------- #
     # Client-Specific Constants
     # ----------------------------------------------------------------------- #
@@ -27,16 +28,12 @@ def main():
     # Initialize Model
     # ----------------------------------------------------------------------- #
 
-    # Shared across all clients
-    model = FusionNet()
-
     # Free for Client to modify
     config = {
         "batch_size": 16,
         "epochs": 4,
         "learning_rate": 1e-3
     }
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     loss = nn.BCEWithLogitsLoss() # NOTE: model outputs probability, not binary classification
     optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'])
 
@@ -44,7 +41,7 @@ def main():
     # Load Client-Specific Data for Federated Training
     # ----------------------------------------------------------------------- #
     clinical_files = [
-        os.path.join(DATASET_PATH, f"{id}/{id}_CD.json") for id in IDS
+        os.path.join(dataset_path, f"{id}/{id}_CD.json") for id in IDS
     ]  # Add all clinical file paths here
     clinical_ds = ClinicalDataset(clinical_files)
 
@@ -55,65 +52,31 @@ def main():
     )
 
     # ----------------------------------------------------------------------- #
-    # Load Evaluation Data (only b/c we are simulating FL)
+    # Training Loop
     # ----------------------------------------------------------------------- #
-    testCDloader, testRNAloader = load_eval_data(DATASET_PATH)
+    print(f"Memphis Hospital site_name: {client_name}")
+    print(f"current_round={current_round}") # type: ignore
 
-    # ----------------------------------------------------------------------- #
-    # NVFlare Initialization
-    # ----------------------------------------------------------------------- #
-    flare.init()
-    sys_info = flare.system_info()
-    client_name = sys_info["site_name"]
-    summary_writer = SummaryWriter()
-    print(f"Memphis Hospital corresponds to site_name: {client_name}")
+    steps = config['epochs'] * len(CDloader)
+    for epoch in range(config['epochs']):
+        for i, batch in enumerate(CDloader):
+            clinical_data, labels = batch[0].to(device), batch[1].to(device)
+            optimizer.zero_grad()
 
-    # ----------------------------------------------------------------------- #
-    # NVFlare Training Loop
-    # ----------------------------------------------------------------------- #
-    while flare.is_running():
-        global_model = flare.receive()
-        print(f"Memphis Hospital site_name: {client_name}")
-        print(f"current_round={global_model.current_round}") # type: ignore
+            predictions = model(clinical_data, None)
+            cost = loss(predictions, labels)
+            cost.backward()
+            optimizer.step()
 
-        model.load_state_dict(global_model.params) # type: ignore
-        model.to(device)
+            print(f"[{epoch + 1}, {i + 1:5d}] loss: {cost.item()}")
+            # Optional: Log metrics
+            global_step = current_round * steps + epoch * len(CDloader) + i # type: ignore
+            summary_writer.add_scalar(tag="loss", scalar=cost.item(), global_step=global_step)
 
-        # evaluate on received model
-        accuracy = evaluate(model, testCDloader, testRNAloader, device)
+            print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {cost.item()}")
 
-        steps = config['epochs'] * len(CDloader)
-        for epoch in range(config['epochs']):
-            for i, batch in enumerate(CDloader):
-                clinical_data, labels = batch[0].to(device), batch[1].to(device)
-                optimizer.zero_grad()
+    print(f"Finished Training for Memphis Hospital, site_name: {client_name}")
 
-                predictions = model(clinical_data, None)
-                cost = loss(predictions, labels)
-                cost.backward()
-                optimizer.step()
-
-                print(f"[{epoch + 1}, {i + 1:5d}] loss: {cost.item()}")
-                # Optional: Log metrics
-                global_step = global_model.current_round * steps + epoch * len(CDloader) + i # type: ignore
-                summary_writer.add_scalar(tag="loss", scalar=cost.item(), global_step=global_step)
-
-                print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {cost.item()}")
-
-        print(f"Finished Training for Memphis Hospital, site_name: {client_name}")
-
-        PATH = "./memphis.pth"
-        torch.save(model.state_dict(), PATH)
-
-        # (7) construct trained FL model
-        output_model = flare.FLModel(
-            params=model.cpu().state_dict(),
-            metrics={"accuracy": accuracy},
-            meta={"NUM_STEPS_CURRENT_ROUND": steps},
-        )
-        print(f"site: {client_name}, sending model to server.")
-        # (8) send model back to NVFlare
-        flare.send(output_model)
-
-if __name__ == "__main__":
-    main()
+    PATH = "./memphis.pth"
+    torch.save(model.state_dict(), PATH)
+    return model.cpu().state_dict(), steps
