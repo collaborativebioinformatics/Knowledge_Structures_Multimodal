@@ -91,10 +91,6 @@ Each data modality needs to be embedded in some way. An example might be:
 - RNASeq can use some sort of MLP
 - Clinical Data can also use some sort of MLP
 
-For the proof-of-concept, we will use the encoder from a simple linear autoencoder to generate embeddings for the clinical data. At each round of federated learning, each client will perform
-1. *local* training the autoencoder 
-2. *federated* training the global fusion model
-
 ### Level 2: Interpretable + Learnable Weights Per-Modality
 We create a learnable layer that gives an easily-interpreted weight, or importance score, to each modality's embedding.
 
