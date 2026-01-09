@@ -37,7 +37,7 @@ def main():
         "learning_rate": 1e-2
     }
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    loss = nn.BCELoss()
+    loss = nn.BCEWithLogitsLoss() # NOTE: model outputs probability, not binary classification
     optimizer = torch.optim.SGD(model.parameters(), lr=config['learning_rate'], momentum=0.9)
 
     # ----------------------------------------------------------------------- #
@@ -99,7 +99,6 @@ def main():
 
         steps = config['epochs'] * n_batches
         for epoch in range(config['epochs']):
-            running_loss = 0.0
             for i, ((clinical_data, progression_labels), rnaseq_data) in enumerate(zip(CDloader, RNAloader)):
                 clinical_data = clinical_data.to(device)
                 progression_labels = progression_labels.to(device)
@@ -112,17 +111,12 @@ def main():
                 cost.backward()
                 optimizer.step()
 
-                running_loss += cost.item()
-                if i % 5 == 4:
-                    avg_loss = running_loss / 5
-                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {avg_loss:.3f}")
+                print(f"[{epoch + 1}, {i + 1:5d}] loss: {cost.item()}")
+                # Optional: Log metrics
+                global_step = global_model.current_round * steps + epoch * len(CDloader) + i # type: ignore
+                summary_writer.add_scalar(tag="loss", scalar=cost.item(), global_step=global_step)
 
-                    # Optional: Log metrics
-                    global_step = global_model.current_round * steps + epoch * n_batches + i # type: ignore
-                    summary_writer.add_scalar(tag="loss", scalar=avg_loss, global_step=global_step)
-
-                    print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {running_loss}")
-                    running_loss = 0.0
+                print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {cost.item()}")
 
         print(f"Finished Training for San Diego Hospital, site_name: {client_name}")
 

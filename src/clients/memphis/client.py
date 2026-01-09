@@ -1,7 +1,7 @@
 """
 Adapted from NVFlare "Hello PyTorch" (hello-pt) example code.
 
-Simulates the San Diego Hospital as outlined in the Methods.
+Simulates the Memphis Hospital as outlined in the Methods.
 """
 import os 
 
@@ -12,7 +12,7 @@ import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
 from server.model import SimpleNetwork
-from clients.datasets import ClinicalDataset, RNADataset
+from clients.datasets import ClinicalDataset
 from clients.evaluate import evaluate, load_eval_data
 
 def main():
@@ -37,7 +37,7 @@ def main():
         "learning_rate": 1e-3
     }
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    loss = nn.CrossEntropyLoss()
+    loss = nn.BCEWithLogitsLoss() # NOTE: model outputs probability, not binary classification
     optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'])
 
     # ----------------------------------------------------------------------- #
@@ -66,14 +66,14 @@ def main():
     sys_info = flare.system_info()
     client_name = sys_info["site_name"]
     summary_writer = SummaryWriter()
-    print(f"San Diego Hospital corresponds to site_name: {client_name}")
+    print(f"Memphis Hospital corresponds to site_name: {client_name}")
 
     # ----------------------------------------------------------------------- #
     # NVFlare Training Loop
     # ----------------------------------------------------------------------- #
     while flare.is_running():
         global_model = flare.receive()
-        print(f"San Diego Hospital site_name: {client_name}")
+        print(f"Memphis Hospital site_name: {client_name}")
         print(f"current_round={global_model.current_round}") # type: ignore
 
         model.load_state_dict(global_model.params) # type: ignore
@@ -82,33 +82,27 @@ def main():
         # evaluate on received model
         accuracy = evaluate(model, testCDloader, testRNAloader, device)
 
-        steps = config['epochs'] * len(train_loader)
+        steps = config['epochs'] * len(CDloader)
         for epoch in range(config['epochs']):
-            running_loss = 0.0
-            for i, batch in enumerate(train_loader):
-                images, labels = batch[0].to(device), batch[1].to(device)
+            for i, batch in enumerate(CDloader):
+                clinical_data, labels = batch[0].to(device), batch[1].to(device)
                 optimizer.zero_grad()
 
-                predictions = model(images)
+                predictions = model(clinical_data, None)
                 cost = loss(predictions, labels)
                 cost.backward()
                 optimizer.step()
 
-                running_loss += cost.item()
-                if i % 5 == 4:
-                    avg_loss = running_loss / 5
-                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {avg_loss:.3f}")
+                print(f"[{epoch + 1}, {i + 1:5d}] loss: {cost.item()}")
+                # Optional: Log metrics
+                global_step = global_model.current_round * steps + epoch * len(CDloader) + i # type: ignore
+                summary_writer.add_scalar(tag="loss", scalar=cost.item(), global_step=global_step)
 
-                    # Optional: Log metrics
-                    global_step = global_model.current_round * steps + epoch * len(train_loader) + i # type: ignore
-                    summary_writer.add_scalar(tag="loss", scalar=avg_loss, global_step=global_step)
+                print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {cost.item()}")
 
-                    print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {running_loss}")
-                    running_loss = 0.0
+        print(f"Finished Training for Memphis Hospital, site_name: {client_name}")
 
-        print(f"Finished Training for San Diego Hospital, site_name: {client_name}")
-
-        PATH = "./san-diego.pth"
+        PATH = "./memphis.pth"
         torch.save(model.state_dict(), PATH)
 
         # (7) construct trained FL model
