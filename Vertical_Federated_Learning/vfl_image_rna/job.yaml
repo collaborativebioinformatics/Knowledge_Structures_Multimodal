@@ -1,0 +1,9 @@
+api_version: 3
+name: vfl_image_rna
+
+deploy_map:
+  server:
+    - server
+  client:
+    - client_img
+    - client_rna

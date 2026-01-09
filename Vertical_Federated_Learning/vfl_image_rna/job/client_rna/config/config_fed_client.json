@@ -1,0 +1,12 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": ["vfl_forward", "vfl_backward"],
+      "executor": {
+        "path": "src.vfl_executor.RNAExecutor",
+        "args": {}
+      }
+    }
+  ]
+}

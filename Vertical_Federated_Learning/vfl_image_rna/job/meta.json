@@ -1,0 +1,12 @@
+{
+    "name": "vfl_image_rna",
+    "deploy_map": {
+        "server": ["server"],
+        "client_img": ["site-1"],
+        "client_rna": ["site-2"]
+    },
+    "min_clients": 2,
+    "stats_pool_config": {
+        "save_pools": ["*"]
+    }
+}
