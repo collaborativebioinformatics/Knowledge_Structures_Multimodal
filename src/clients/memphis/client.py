@@ -13,6 +13,7 @@ from nvflare.client.tracking import SummaryWriter
 
 from server.model import SimpleNetwork
 from clients.datasets import ClinicalDataset, RNADataset
+from clients.evaluate import evaluate, load_eval_data
 
 def main():
     DATASET_PATH="/Users/tyleryang/Developer/CMU-NVIDIA-Hackathon/rna-cd-data/"
@@ -31,8 +32,8 @@ def main():
 
     # Free for Client to modify
     config = {
-        "batch_size": 5,
-        "epochs": 5,
+        "batch_size": 16,
+        "epochs": 4,
         "learning_rate": 1e-3
     }
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -56,26 +57,7 @@ def main():
     # ----------------------------------------------------------------------- #
     # Load Evaluation Data (only b/c we are simulating FL)
     # ----------------------------------------------------------------------- #
-    def evaluate(net, data_loader, device):
-        correct = 0
-        total = 0
-        # since we're not training, we don't need to calculate the gradients for our outputs
-        with torch.no_grad():
-            for data in data_loader:
-                # (optional) use GPU to speed things up
-                clinical, rnaseq, labels = data.to(device)
-                outputs = net(clinical, rnaseq)
-
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-
-            print(f"Accuracy of the network on the 26 test subjects from Cohort A: {100 * correct // total} %")
-        return 100 * correct // total
-    
-    TEST_IDS = ['3A_137', '3A_138', '3A_139', '3A_140', '3A_141', '3A_142', '3A_143', '3A_144', '3A_145', '3A_146', '3A_147', '3A_148', '3A_149', '3A_153', '3A_154', '3A_157', '3A_158', '3A_160', '3A_162', '3A_163', '3A_165', '3A_168', '3A_169', '3A_186', '3A_190', '3A_191']
-    assert len(TEST_IDS) == 26, f"expected 26 IDS for evaluation, got {len(TEST_IDS)}"
-
+    testCDloader, testRNAloader = load_eval_data(DATASET_PATH)
 
     # ----------------------------------------------------------------------- #
     # NVFlare Initialization
@@ -98,7 +80,7 @@ def main():
         model.to(device)
 
         # evaluate on received model
-        accuracy = evaluate(model, test_loader, device)
+        accuracy = evaluate(model, testCDloader, testRNAloader, device)
 
         steps = config['epochs'] * len(train_loader)
         for epoch in range(config['epochs']):

@@ -13,6 +13,7 @@ from nvflare.client.tracking import SummaryWriter
 
 from server.model import SimpleNetwork
 from clients.datasets import ClinicalDataset, RNADataset, clinical_collate_fn
+from clients.evaluate import evaluate, load_eval_data
 
 def main():
     DATASET_PATH="/Users/tyleryang/Developer/CMU-NVIDIA-Hackathon/rna-cd-data/"
@@ -31,12 +32,12 @@ def main():
 
     # Free for Client to modify
     config = {
-        "batch_size": 10,
+        "batch_size": 32,
         "epochs": 2,
         "learning_rate": 1e-2
     }
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    loss = nn.CrossEntropyLoss()
+    loss = nn.BCELoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=config['learning_rate'], momentum=0.9)
 
     # ----------------------------------------------------------------------- #
@@ -65,29 +66,13 @@ def main():
         shuffle=True
     )
 
+    n_batches = len(CDloader)
+    assert n_batches == len(RNAloader), f"Batches for CD ({n_batches}) not same as for RNA ({len(RNAloader)})"
+
     # ----------------------------------------------------------------------- #
     # Load Evaluation Data (only b/c we are simulating FL)
     # ----------------------------------------------------------------------- #
-    def evaluate(net, data_loader, device):
-        correct = 0
-        total = 0
-        # since we're not training, we don't need to calculate the gradients for our outputs
-        with torch.no_grad():
-            for data in data_loader:
-                # (optional) use GPU to speed things up
-                clinical, rnaseq, labels = data.to(device)
-                outputs = net(clinical, rnaseq)
-
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-
-            print(f"Accuracy of the network on the 26 test subjects from Cohort A: {100 * correct // total} %")
-        return 100 * correct // total
-    
-    TEST_IDS = ['3A_137', '3A_138', '3A_139', '3A_140', '3A_141', '3A_142', '3A_143', '3A_144', '3A_145', '3A_146', '3A_147', '3A_148', '3A_149', '3A_153', '3A_154', '3A_157', '3A_158', '3A_160', '3A_162', '3A_163', '3A_165', '3A_168', '3A_169', '3A_186', '3A_190', '3A_191']
-    assert len(TEST_IDS) == 26, f"expected 26 IDS for evaluation, got {len(TEST_IDS)}"
-
+    testCDloader, testRNAloader = load_eval_data(DATASET_PATH)
 
     # ----------------------------------------------------------------------- #
     # NVFlare Initialization
@@ -110,17 +95,20 @@ def main():
         model.to(device)
 
         # evaluate on received model
-        accuracy = evaluate(model, test_loader, device)
+        accuracy = evaluate(model, testCDloader, testRNAloader, device)
 
-        steps = config['epochs'] * len(train_loader)
+        steps = config['epochs'] * n_batches
         for epoch in range(config['epochs']):
             running_loss = 0.0
-            for i, batch in enumerate(train_loader):
-                images, labels = batch[0].to(device), batch[1].to(device)
+            for i, ((clinical_data, progression_labels), rnaseq_data) in enumerate(zip(CDloader, RNAloader)):
+                clinical_data = clinical_data.to(device)
+                progression_labels = progression_labels.to(device)
+                rnaseq_data = rnaseq_data.to(device)
+
                 optimizer.zero_grad()
 
-                predictions = model(images)
-                cost = loss(predictions, labels)
+                predictions = model(clinical_data, rnaseq_data)
+                cost = loss(predictions, progression_labels)
                 cost.backward()
                 optimizer.step()
 
@@ -130,7 +118,7 @@ def main():
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {avg_loss:.3f}")
 
                     # Optional: Log metrics
-                    global_step = global_model.current_round * steps + epoch * len(train_loader) + i # type: ignore
+                    global_step = global_model.current_round * steps + epoch * n_batches + i # type: ignore
                     summary_writer.add_scalar(tag="loss", scalar=avg_loss, global_step=global_step)
 
                     print(f"site={client_name}, Epoch: {epoch}/{config['epochs']}, Iteration: {i}, Loss: {running_loss}")
