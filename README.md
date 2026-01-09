@@ -119,6 +119,97 @@ self.risk_head = nn.Sequential(
 ```
 We found that CHIMERA did not provide ground truth labels (*not really sure what that even means for disease risk prediction, this is WIP*) so we merely provided dummy labels using all zeros. We successfully ran NVFlare locally on an M3 MacBook Pro for 1 round, 2 epochs per round. 
 
+## Unsupervised Multimodal Clustering for Risk Stratification
+
+In addition to the federated learning approach described above, we developed an **unsupervised multimodal fusion pipeline** that integrates whole-slide histopathology images (WSI) with RNA transcriptomics data for bladder cancer recurrence risk stratification. This approach differs from our federated learning work in that it requires no training data and uses heuristic-based fusion methods rather than neural network training.
+
+### Dataset and Modalities
+
+The clustering pipeline processes **176 bladder cancer patients** from CHIMERA Task 3, combining two distinct modalities:
+
+1. **WSI Histopathology Features**: Variable-sized patch embeddings extracted from whole-slide images using a pre-trained UNI encoder. Each patient's slide contains between 11,000 and 343,000 patches, where each patch is represented as a 1024-dimensional embedding vector.
+
+2. **RNA Transcriptomics Embeddings**: Pre-computed 256-dimensional transcriptomic signatures derived from RNA sequencing data for each patient.
+
+This multimodal combination allows the model to leverage both morphological patterns visible in histopathology (tumor architecture, cell morphology) and molecular signatures from gene expression data, providing a comprehensive view of each patient's disease state.
+
+### Multimodal Fusion Architecture
+
+The pipeline employs a three-stage architecture to integrate these heterogeneous modalities:
+
+**Stage 1: WSI Aggregation**  
+Variable-sized WSI patch sets (N × 1024, where N varies per patient) are aggregated into fixed-size slide embeddings (1024-d) using a **gated attention mechanism**. This heuristic-based approach weights patches by their statistical properties—specifically, patches with higher variance receive greater attention, as they tend to represent more morphologically complex regions (tumor nests, areas of pleomorphism). The attention weights are computed using a combination of tanh and sigmoid gates operating on patch mean and variance statistics, requiring no neural network training.
+
+**Stage 2: Z-Score Normalization**  
+Before fusion, both modalities are independently normalized using cohort-level Z-score standardization. This ensures that WSI features (1024-d) and RNA embeddings (256-d) are on comparable scales, preventing one modality from dominating the final representation. Normalization is performed across all 176 patients to compute global mean and standard deviation for each modality.
+
+**Stage 3: Concatenation and Clustering**  
+The normalized WSI (1024-d) and RNA (256-d) embeddings are concatenated to create a unified 1280-dimensional patient signature. These fused signatures are then clustered using HDBSCAN (Hierarchical Density-Based Spatial Clustering of Applications with Noise), a density-based clustering algorithm that automatically determines the optimal number of clusters and identifies outlier patients.
+
+```
+WSI Patches (N × 1024) → Gated Attention Pooling → WSI Embedding (1024-d)
+                                                          │
+                                                          ├─→ Z-Score Normalization
+                                                          │
+RNA Embedding (256-d) ──────────────────────────────────┤
+                                                          │
+                                                          └─→ Concatenation (1280-d) → HDBSCAN Clustering
+```
+
+### Clustering Results
+
+The pipeline successfully stratified all 176 patients into **3 distinct risk clusters**:
+
+- **Cluster 0**: 53 patients (30.1%)
+- **Cluster 1**: 72 patients (40.9%)
+- **Cluster 2**: 51 patients (29.0%)
+
+### Clinical Relevance Validation
+
+To assess whether the clusters capture clinically meaningful patterns, we performed a comprehensive validation against clinical variables from the CHIMERA Task 3 dataset. The analysis examined associations between cluster assignments and key clinical features including disease progression, Bladder Recurrence Score (BRS), EORTC risk categories, age, and other prognostic factors.
+
+**Progression Analysis**: The clusters showed differential progression rates, suggesting that the multimodal fusion captures recurrence risk patterns. Cluster 2 demonstrated the highest progression rate, indicating it may represent a higher-risk subgroup, while Cluster 0 showed lower progression rates.
+
+**Bladder Recurrence Score (BRS) Association**: Chi-square testing revealed associations between cluster assignments and BRS categories (BRS1, BRS2, BRS3), validating that the clusters align with established clinical risk stratification schemes.
+
+**EORTC Risk Categories**: The distribution of EORTC risk categories (High risk, Highest risk) varied across clusters, further supporting the clinical relevance of the stratification.
+
+**Demographic and Clinical Variables**: Statistical analyses (ANOVA, chi-square tests) were performed to identify significant associations between clusters and clinical variables including age, tumor stage, grade, lymphovascular invasion (LVI), and variant histology.
+
+**Survival Analysis**: Clustering was validated against clinical survival outcomes using Kaplan-Meier survival curves. The resulting clusters showed a concordance index (C-index) of 0.5507, with a log-rank test p-value of 0.3069. While the statistical significance threshold was not reached in this unsupervised setting, the clusters demonstrate differential survival patterns that provide a foundation for further investigation into recurrence risk stratification.
+
+![Clinical Relevance Summary](Fusion_model_clustering/analysis/clinical_analysis/clinical_relevance_summary.png)
+
+*Clinical relevance analysis showing associations between clusters and key clinical variables including progression rates, BRS distribution, and demographic factors.*
+
+The clinical validation confirms that the unsupervised multimodal clustering approach captures biologically and clinically meaningful patterns that complement traditional risk stratification methods, providing an integrated view of patient risk based on both histopathological and molecular features.
+
+**Visualizations**: The analysis generates several key visualizations demonstrating clinical relevance:
+
+- **Survival Analysis**: Kaplan-Meier curves showing differential survival patterns across clusters
+- **t-SNE Embeddings**: 2D visualization of the 1280-dimensional patient signatures, colored by cluster assignment
+- **Cluster Distribution**: Distribution of patients across the three identified clusters
+- **Clinical Association Plots**: Progression rates, BRS distributions, and other clinical variables by cluster
+
+![Kaplan-Meier Survival Curves](Fusion_model_clustering/analysis/survival_plots/kaplan_meier_curves.png)
+
+*Kaplan-Meier survival curves for each cluster, showing differential recurrence-free survival patterns.*
+
+![t-SNE Visualization](Fusion_model_clustering/analysis/signature_tsne.png)
+
+*t-SNE projection of 1280-dimensional multimodal patient signatures, demonstrating cluster separation in the fused feature space.*
+
+### Key Advantages
+
+This heuristic-based approach offers several benefits over supervised neural network methods:
+
+- **No Training Required**: The pipeline operates entirely on inference, using fixed mathematical operations rather than learned parameters
+- **High Interpretability**: Attention weights are derived from explicit statistical properties (patch variance), making it clear which tissue regions drive clustering decisions
+- **Immediate Deployment**: Works on new data without requiring model training or fine-tuning
+- **Robustness**: Avoids overfitting issues common in deep learning models trained on small datasets
+
+The full implementation, including attention heatmap visualization and survival analysis tools, is available in the `Fusion_model_clustering/` directory of this repository.
+
 # How to use this tool
 
 # Future Directions
